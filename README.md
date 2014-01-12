@@ -1,7 +1,7 @@
-[sig.js](mmcdermo.github.io/sig.js)
+[sig.js](//mmcdermo.github.io/sig.js)
 ======
 Functional Reactive Programming for UI Design. 
-* See examples & code at [mmcdermo.github.io/sig.js](mmcdermo.github.io/sig.js)
+* See examples & code at [mmcdermo.github.io/sig.js](//mmcdermo.github.io/sig.js)
 
 Intro
 -----
