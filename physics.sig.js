@@ -102,10 +102,20 @@ function physicsSig(s, w){
 	}
 	return simulation(initParams, paramSig2, simStep);
     }
-
+    
+    function springify(friction, tension, endValSig){
+	var springParams = sig.ojoin({
+	    k : tension
+	    , endVal : endValSig
+	    , friction : friction
+	    , force : 0
+	});
+	return spring(springParams).lift(function(x){ return x.pos; });
+    }
     return {
-	spring: spring
+	spring: spring,
+	springify: springify
     }
 }
 
-//window.physics = physicsSig();
+window.physics = physicsSig();

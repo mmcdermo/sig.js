@@ -44,6 +44,7 @@
     </script>
     <link href='http://fonts.googleapis.com/css?family=News+Cycle|Exo+2:400,700,900italic' rel='stylesheet' type='text/css'>
     <link href='http://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic' rel='stylesheet' type='text/css'>
+<link href='sig.js.css' rel='stylesheet' type='text/css'  />
 </script>
     <style type='text/css'>
     .editor { 
@@ -73,18 +74,14 @@
     }
     .slider { box-shadow: 0px; }
     </style>
-<style id='springUI_js'>
-    /** Spring Input Parameters **/
-var tensionStr = 
-    '<input type="range" name="tension" min="1" max="100" value="60">';
-var tensionInput = wg.stringSpec(tensionStr).elem();
-var frictionStr =  
-    '<input type="range" name="friction" min="1" max="30" value="5">';
-var frictionInput = wg.stringSpec(frictionStr).elem();
+<style id='springUI_js'>var tensionInput = wg.constGen(
+    '<input type="range" name="tension" min="1" max="100" value="60">');
+var frictionInput =  wg.constGen(
+    '<input type="range" name="friction" min="1" max="30" value="5">');
 
-/** Spring  **/
-var imgClickedRecv = sig.receiver(false);
-var endValSig = imgClickedRecv.lift(function(z){ 
+/** Image with Spring  **/
+var img = wg.constGen("<div style='height:213px; width: 300px; background-image:url(toucan.jpg)'></div>")
+var endValSig = img.clicked().lift(function(z){ 
     if(z === true) return 1.0;
     else return 0; 
 });
@@ -92,25 +89,21 @@ var springParams = sig.ojoin({
     k : tensionInput.val().def(40)
     , endVal : endValSig
     , friction : frictionInput.val().def(3)
-    , force : sig.constant(0)
+    , force : 0
 });
 var s = physics.spring(springParams);
 
-/** Image Element **/
-var imgStr = "<div style='height:213px; width: 300px; background-image:url(toucan.jpg)'></div>";
-function imgCss(p){ 
-    return { '-webkit-transform': 'scale3d('+p.scale+', '+p.scale+', 1)' };
+/** Image CSS **/
+function imgCSS(spring){ 
+    var scale = (1/3) * (3 - spring.pos);
+    return { '-webkit-transform': 'scale3d('+scale+', '+scale+', 1)' };
 }
-var imgParams = {
-    scale: s.lift(function(spring){ return (1/3) * (3 - spring.pos); })
-};
-var cssSig = sig.ojoin(imgParams).lift(imgCss);
-var img = wg.stringSpec(imgStr).css(cssSig).elem();
-var imgClicked = img.clicked().transmitter(imgClickedRecv); 
+img = img.css(s.lift(imgCSS));
 
 /** Slider Object **/
-var sliderClickedRecv = sig.receiver(false);
-var sliderEndValSig = sliderClickedRecv.lift(function(z){ 
+var slider = wg.elem();
+var sliderBar = wg.constGen("<div class='slideBar'></div>");
+var sliderEndValSig = sliderBar.clicked().toggle().lift(function(z){ 
     if(z === true) return 1.0;
     return 0; 
 });
@@ -120,41 +113,37 @@ var springParams2 = sig.ojoin({
     , friction : frictionInput.val().def(3)
     , force : sig.constant(0)
 });
-
 var spring2 = physics.spring( springParams2 );
-var slideBarStr = "<div class='slideBar'></div>";
 var sliderGen = function(clicked){
     return "<div class='slider'>"+(clicked ? "On" : "Off")+"</div>";
 };
 function slidCSS(spring){
     return { 'margin-left' : 66 * spring.pos + "%" };
 }
-var sliderGenSig = sliderClickedRecv.lift(sliderGen);
-var sliderCSSSig = spring2.lift(slidCSS);
-var slider = wg.spec().gen(sliderGenSig).css(sliderCSSSig).elem();
-var sliderBar = wg.stringSpec(slideBarStr).elem([slider]);
-var sliderClicked = sliderBar.clicked().toggle().transmitter(sliderClickedRecv);
-
-function tagElem(name, contents, classes){
-    return wg.stringSpec("<"+name+">"+contents+"</"+name+">").elem();
-}
+slider = slider.gen(sliderBar.clicked().toggle().lift(sliderGen))
+  .css(spring2.lift(slidCSS))
+sliderBar = sliderBar.children([slider]);
 
 /** Render **/
-function fgroup(l){
-    return wg.stringSpec("<div class='formGroup'><label>"+l+"</label><br/></div>");
+function tagElem(name, contents, classes){
+    return wg.constGen("<"+name+">"+contents+"</"+name+">");
 }
-var root = wg.spec().elem([
+function fgroup(l){
+    return wg.constGen("<div class='formGroup'><label>"+l+"</label><br/></div>");
+}
+var root = wg.elem([
     tagElem("h3", "Settings")
-    , fgroup("Tension").elem([tensionInput])
-    , fgroup("Friction").elem([frictionInput])
+    , fgroup("Tension")
+    , tensionInput
+    , fgroup("Friction")
+    , frictionInput
     , tagElem("h3", "Scale on click")
     , img
     , tagElem("h3", "Slide on click")
     , sliderBar
 ]);
 var rend = wg.render(root, sig.constant("#springUI_widgetArea"));
-sig.run();
-</style>
+sig.run();</style>
 
 
 
@@ -162,32 +151,68 @@ sig.run();
 //Lifting feeds the incoming date signal into our function
 var contentSig = sig.Util.date.lift(content);
 
-//To make a WidgetSpec we start with a default spec ( wg.spec() ) and then 
-// change its generation function to be contentSig.
-var widgetSpec = wg.spec().gen(contentSig);
-
-//To make this an element, we call .elem() on the WidgetSpec Signal
-var elem = widgetSpec.elem();
+//We create a default element with wg.elem() then change its gen to our signal
+var element = wg.elem().gen(contentSig);
 
 //Finally we render it in the div with id "#Intro_widgetArea"
-wg.render(elem, sig.constant("#Intro_widgetArea"));
+wg.render(element, sig.constant("#Intro_widgetArea"));
 
 sig.run();</style>
+n
+<style id='Intro2_js'>var nameInput  = wg.constGen("<input></input>");
+var addButton  = wg.constGen("<button>Add Todo</button>");
+var todos = sig.Aggregator(); // : Signal [Element]
+var list = wg.elem(todos.def([])).constGen("<ul></ul>");
 
-<style id='Intro2_js'>var nameInput  = wg.stringSpec("<input></input>").elem();
-var addButton  = wg.stringSpec("<button>Add Todo</button>").elem();
-var todos = sig.Aggregator(); // : Signal [Element] 
-var list = wg.stringSpec("<ul></ul>").elem(todos);
-function todo(name){ return "<li>" + name + "</li>"; }
-
-var todoSpec = wg.spec().gen( nameInput.val().lift(todo) );
-todoSpec.onChange( addButton.clicked().toggle() ).lift(function(spec){
-    todos.aggregate(sig.constant(spec).elem()); 
+var clicked = addButton.clicked().toggle().throttle(25);
+nameInput.val().onChange(clicked).(lift(function(val){
+  var remove = wg.constGen("<div class='remove'>Remove</div>");
+  var todoStr = "<li>" + val + "</li>";
+  var todo = wg.elem([remove]).constGen(todoStr)
+    .hideOn(remove.clicked().toggle());
+  todos.aggregate(todo);
 });
 
-var root = wg.spec().elem([list, nameInput, addButton]);
+var root = wg.elem([list, nameInput, addButton]);
 wg.render(root, sig.constant("#Intro2_widgetArea"));
 sig.run();</style>
+
+    <link href="http://netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+<style id='Form1_js'>
+
+var input = wg.inputField("A normal input");
+var editor = wg.inlineField("Click me! Inline editable text. ");
+var dropdown = wg.dropdownField({ "op1": "Option 1", "op2": "Option 2" });
+var button = wg.button(sig.constant("Submit")); 
+var toggle = wg.toggleField();
+
+/** HTTP Simulator **/
+function sim(input){
+    return {
+	success: Math.random() > 0.5 ? true : false,
+	response: "dropdown: " + input.dropdown.k
+	    +", toggle: " + input.toggle
+            +", editor: " + input.editor
+    }
+}
+var httpRes = sig.ojoin({ 
+    dropdown: dropdown.val(),
+    toggle: toggle.val(),
+    editor: editor.val()
+}).onChange(button.clicked().toggle().throttle(50)).throttle(1000).httpSim(sim, 1000);
+
+/** Loading & HTTP Display **/
+var loading = wg.statusIndicator(httpRes.prop("inProgress")
+				 ,httpRes.prop("data.success"));
+//prop("data")); 
+			      
+var httpResWg = wg.elem().gen( 
+    httpRes.lift(function(z){ return "<div>HTTP Data:"+z.data.response+"</div>"; }));
+
+/** Rendering **/
+var root = wg.elem([input, editor, dropdown, toggle, button, loading, httpResWg]);
+wg.render(root, sig.constant("#Form1_widgetArea"));
+ sig.run();</style>
 
     <style type='text/css'>
 
@@ -234,6 +259,16 @@ sig.run();</style>
         	<div class='editor' id='springUI_Editor' data-example="springUI"></div>
         </div>
 	<div class='widgetArea' id='springUI_widgetArea'></div>
+      </section>
+
+      <section>
+	<h2> Forms and Ajax </h2>
+        <div class='editorCol'>
+        <div class='editor' id='Form1_Editor' data-example="Form1"></div>
+        </div>
+	<div class='widgetArea'>
+        <div id='Form1_widgetArea'></div>
+        </div>
       </section>
 
     </div>

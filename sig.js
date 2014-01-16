@@ -18,7 +18,13 @@ function jsSig(){
 
 
     var Nothing = { Nothing: true }
-    function Just(x) { return { Just: x } }
+    function Just(x) { 
+
+	if(x && x.NoChange === true){
+	    console.log("BREAKPOINT");
+	}
+	return { Just: x } 
+    }
     function fromJust(x){
 	if(isNothing(x)) 
 	    throw "fromJust: Object is Nothing."
@@ -29,8 +35,12 @@ function jsSig(){
 	return false; 
     }
 
-    var NoChange = { NoChange: true }
-    
+    var NoChange = { NoChange: true }    
+    function isNoChange(obj){
+	if(obj.NoChange === true) return true;
+	return false;
+    }
+
     var nsteps = 0;
     function step(sorted){
 	nsteps++;
@@ -46,7 +56,8 @@ function jsSig(){
 	    if(n.category === 'input'){
 		n.nochange = false;
 		var z = n.stepSample(n);
-		if(z !== NoChange){ n.nochange = false; n.value = Just(z); }
+		if(!isNoChange(z)){ 
+		    n.nochange = false; n.value = Just(z); }
 		else n.nochange = true;	    
 	    }
 	    if(n.category === 'asyncinput'){
@@ -92,8 +103,10 @@ function jsSig(){
 		    var out = [];
 		    var outputNothing = false; 
 		    for(var i = 0; i < n.backward.length; i++){
-			if(!isNothing(n.backward[i].value))
+			
+			if(!isNothing(n.backward[i].value)){
 			    out.push(fromJust(n.backward[i].value));
+			}
 			else if(n.filterNothings === false){
 			    outputNothing = true;
 			    break;
@@ -104,7 +117,7 @@ function jsSig(){
 		}
 		if(n.category === 'builtin'){ 
 		    var z = n.stepSample(n);
-		    if(z !== NoChange){ n.nochange = false; n.value = Just(z); }
+		    if(!isNoChange(z)){ n.nochange = false; n.value = Just(z); }
 		    else n.nochange = true;	    
 		}
 		if(n.category === 'SF') { 
@@ -242,6 +255,14 @@ function jsSig(){
 	var z = sfnCopy(s3);
 	connect(s1, z);
 	connect(s2, z);
+	return z;
+    }
+
+    function compose3(s1, s2, s3, s4){
+	var z = sfnCopy(s4);
+	connect(s1, z);
+	connect(s2, z);
+	connect(s3, z);
 	return z;
     }
 
@@ -407,7 +428,7 @@ function jsSig(){
 	    var value = fromJust(n.backward[0].value);
 	    var changeVal = fromJust(n.backward[1].value);
 	    if(last === undefined){ last = changeVal; return NoChange; }
-	    if(changeVal === last) return NoChange;
+	    if(objEq(changeVal, last)) return NoChange;
 	    last = changeVal;
 	    return value;
 	}
@@ -417,10 +438,32 @@ function jsSig(){
 	return sig; 
     }
 
+    function mostRecent(sigs){
+	var sig = new SFN();
+	sig.category = 'builtin';
+	for(idx in sigs){
+	    connect(sigs[idx], sig); 
+	}
+	sig.stepSample = function(n){
+	    var lastValue = NoChange;
+	    for(idx in n.backward){
+		var b = n.backward[idx];
+		if(!isNothing(b.value)
+		   && (b.nochange === false
+		       || lastValue === NoChange)){
+		    lastValue = fromJust(b.value)
+		}
+	    }
+	    return lastValue; 
+	}
+	return sig; 
+    }
     // combine : [Signal a] -> Signal [a]
-    function combine(sigs){
-	var agg = Aggregator(false);	
+    function combine(sigs, filterNothings){
+	filterNothings = filterNothings || false; 
+	var agg = Aggregator(filterNothings);	
 	for(var i = 0; i < sigs.length; i++) aggregate(sigs[i], agg);
+	agg.label = "combine";
 	return agg; 
     }
     // Signal.combine : Signal [Signal a] -> Signal [a]
@@ -500,16 +543,29 @@ function jsSig(){
     }
     SFN.prototype.filter = function(pred){ return connect(this, filter(pred)); }
 
+    function objEq(o1, o2){
+	if(typeof(o1) !== 'object'
+	   || typeof(o2) !== 'object') return o1 === o2;
+	for(k in o1){
+	    if(o2[k] === undefined && o1[k] !== undefined) return false; 
+	    if(!objEq(o1[k], o2[k])) return false; 
+	}
+	return true; 
+    }
     function filterRepeats(){
 	var sig = new SFN();
-	sig.category = "input";
+	sig.category = "builtin";
 	sig.lastValue = undefined;
 	sig.stepSample = function(n){
 	    if(isNothing(n.backward[0].value)) return NoChange;
 	    if(nchange(n)) return NoChange;
-	    if(fromJust(n.backward[0].value) == sig.lastValue) return NoChange;
+	    if(objEq(fromJust(n.backward[0].value), sig.lastValue)) {
+		console.log("Filtering value", n.backward[0].value);
+		return NoChange;
+	    }
+	    console.log("Not filtering value", fromJust(n.backward[0].value), sig.lastValue);
 	    sig.lastValue = fromJust(n.backward[0].value);
-	    return n.backward[0].value;
+	    return fromJust(n.backward[0].value);
 	}
 	return sig;	
     }
@@ -519,7 +575,7 @@ function jsSig(){
     
     //Internal function that serves as a pattern for creating
     // async input signals
-    function asyncInputSig(f){
+    function asyncInputSig(f, def){
 	var init = true;
 	var sig = new SFN();
 	sig.category = "asyncinput"
@@ -531,6 +587,7 @@ function jsSig(){
 		return true;
 	    }
 	}
+	if(def !== undefined) sig.value = Just(def); 
 	return sig;
     }
 
@@ -581,6 +638,47 @@ function jsSig(){
 	      })
 	}
 
+    SFN.prototype.throttle = function(t){
+	var sig = new SFN();
+	sig.category = 'builtin';
+	var lastValue = undefined; 
+	var lastTime = 0;
+	sig.stepSample = function(n){
+	    var time = (new Date()).valueOf();
+	    var val = n.backward[0].value; 
+	    if(time - lastTime > t){
+		if(isNothing(val)) return NoChange;
+		lastValue = val; 
+		lastTime = time; 
+		return fromJust(val); 
+	    }
+	    else return NoChange; 
+
+	}
+	return connect(this, sig);
+    }
+
+    SFN.prototype.decay = function(t){
+	var sig = new SFN();
+	sig.category = 'input';
+	var lastValue = undefined; 
+	var lastTime = 0;
+	var r = undefined; 
+	var lastIn = undefined; 
+	sig.stepSample = function(n){
+	    var time = (new Date()).valueOf();
+	    var val = n.backward[0].value; 
+	    if(isNothing(val)) return NoChange;
+	    if(n.backward[0].nochange === false) lastTime = time; 
+	    if(time - lastTime > t) r = { decayed : true, value: fromJust(val) };
+	    else r = { decayed : false, value: fromJust(val) };
+	    if(JSON.stringify(r) === JSON.stringify(lastValue)) return NoChange;
+	    lastValue = r; 
+	    return r; 
+	}
+	return connect(this, sig);
+    }
+    
     //Toggles between true and false every time the incoming
     // signal changes from def to !def. 
     function toggle(d){
@@ -601,16 +699,16 @@ function jsSig(){
     
     //bSwitch will output sig1 when switchSig === true and 
     // sig2 when switchSig === false
-    function bSwitch(switchSig, sig1, sig2){
-	function sw(s, v1, v2){
-	    if(s === true) return v1;
-	    else if(s === false) return v2;
-	    else throw "First Signal to switch must be a boolean Signal";
+    function caseSwitch(switchSig, obj){
+	function sw(s, o){
+	    console.log("Switching!", s, o);
+	    if(o[s] === undefined) 
+		throw "caseSwitch: no case for property "+s;
+	    return o[s];
 	}
 	var s = lift(sw);
 	connect(switchSig, s);
-	connect(sig1, s);
-	connect(sig2, s);
+	connect(ojoin(obj), s);
 	return s; 
     }
 
@@ -625,6 +723,31 @@ function jsSig(){
     SFN.prototype.valSig = function(){ return connect(this, valSig()); }
 
 
+    SFN.prototype.prop = function(k){ 
+	var A = k.split(".");	
+	return connect(this, sig.lift(function(o){ 
+	    var tmp = o;
+	    for(var i = 0; i < A.length; i++){
+		var prop = A[i];
+		tmp = tmp[prop];
+	    }
+	    console.log("PROP", o, k, tmp);
+	    return tmp;
+	}));
+    }
+
+    function or(s1, s2){
+	return compose2(s1, s2, lift(function(a, b){ return a || b }));
+    }
+
+    function and(s1, s2){
+	return compose2(s1, s2, lift(function(a, b){ return a && b }));
+    }
+
+    SFN.prototype.not = function(s){
+	return this.lift(function(b){ return !b; });
+    }
+
     function setContents(sel){
 	var sig = new SFN();
 	sig.category = "output";
@@ -637,22 +760,80 @@ function jsSig(){
 	return connect(this, setContents(sel));
     }
 
-    function httpSig(){
+    function http(){
 	var sig = new Signal()
 	sig.category = 'asyncinput';
 	sig.stepSample = function(n){
-	    if(nchange(n)){ return undefined; }
-	    //else if(!n.nochange){ return n.value; }
+	    if(nchange(n)){ return NoChange; }
+	    if(isNothing(n.backward[0].value)) return NoChange; 
 	    var url = n.backward[0].value.url;
 	    var data = n.backward[1].value.url;
+	    var lastData = undefined; 
+
+	    asyncInput(n, {
+		inProgress: true
+		,time: time
+		,data: lastData
+	    });
+
 	    jQuery.ajax({url: url, cache: false, data: data
 			 ,complete: function(response){
+			     var time = (new Date()).valueOf();
 			     var data = eval(response.responseText);
-			     asyncInput(n, data);
+			     lastData = data; 
+			     asyncInput(n, {
+				 inProgress: false
+				 ,time: time
+				 ,data: data
+			     });
 			 }});
 	}
 	return sig;
     }
+
+    SFN.prototype.httpSim = function(sim, delay){
+	var delay = delay || 1000; 
+	var sig = new SFN();
+	sig.label = 'httpSim';
+	sig.category = 'input';
+	sig.value = Nothing; 
+	var lastValue = undefined; 
+	var lastTime = 0;
+	var lastStepData = false; 
+	var inProgress = true; 
+	sig.stepSample = function(n){
+	    var time = (new Date()).valueOf();
+	    var val = n.backward[0].value; 
+	    if(inProgress && time - lastTime > delay){
+		inProgress = false; 
+		if(isNothing(val)) return NoChange;
+		lastTime = time; 
+		var r = {
+		    inProgress: false,
+		    time: time, 
+		    data: sim(fromJust(val))
+		}; 
+		if(JSON.stringify(r) === JSON.stringify(lastValue)) return NoChange;
+		lastValue = r; 
+		return r;
+	    }
+	    else if(n.backward[0].nochange === false){
+		lastTime = time; 
+		inProgress = true; 
+	    }
+	    if(lastValue === undefined){ return NoChange; }
+	    var r = { inProgress: inProgress
+		     , time: lastValue.time
+		     , data: lastValue.data
+		   };
+
+	    if(JSON.stringify(r) === JSON.stringify(lastValue)) return NoChange;
+	    lastValue = r; 
+	    return r; 
+
+	}
+	return connect(this, sig);
+    }    
 
     /* Signal network operations */
     function addSFN(SFN){
@@ -718,16 +899,21 @@ function jsSig(){
 	combine: extCreate(combine),
 	compose: compose,
 	compose2: compose2,
+	compose3: compose3,
 	foldp: extCreate(foldp), 
-	httpSig: extCreate(httpSig),
+	or: or,
+	and: and,
+	http: extCreate(http),
 	constant: extCreate(constant),
-	bSwitch: bSwitch,
+	mostRecent: mostRecent, 
+	caseSwitch: caseSwitch,
 	Mouse: Mouse,
 	Util: Util,
 	Internal: Internal,
 	Window: Window,
 	__: {
 	    SFN : SFN
+	    , copy: copy
 	    , connect: connect
 	    , reconnect: reconnect
 	    , asyncInputSig : asyncInputSig
@@ -737,4 +923,4 @@ function jsSig(){
     }
 };
 
-//window.sig = jsSig();
+window.sig = jsSig();
